@@ -3,11 +3,17 @@ import {
   Box,
   Typography,
   Stack,
-  TextField,
-  MenuItem,
   CircularProgress,
   useTheme,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  FormHelperText,
 } from "@mui/material";
+import FilterListIcon from "@mui/icons-material/FilterList";
 import {
   LineChart,
   Line,
@@ -20,27 +26,38 @@ import {
 } from "recharts";
 
 function TrafficChart() {
-  const [filter, setFilter] = useState("month");
+  // Actual filter state
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  // Temporary dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [tempStart, setTempStart] = useState("");
+  const [tempEnd, setTempEnd] = useState("");
+  const [error, setError] = useState("");
+
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const theme = useTheme();
-
   const isDark = theme.palette.mode === "dark";
   const tickColor = isDark ? "#e0e0e0" : "#333";
   const gridColor = isDark ? "#444" : "#ccc";
 
+  // Fetch data (all or by date range)
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        import.meta.env.VITE_BACKEND_URL +
-          `/api/reports/analytics?filter=${filter}`,
-        { credentials: "include" }
-      );
+      const params = [];
+      if (startDate && endDate) {
+        params.push(`start=${startDate}`, `end=${endDate}`);
+      }
+      const query = params.length ? `?${params.join("&")}` : "";
+      const url = `${import.meta.env.VITE_BACKEND_URL}/api/reports/analytics${query}`;
+      const res = await fetch(url, { credentials: "include" });
       const result = await res.json();
       if (result.success) setData(result.data);
     } catch (err) {
-      console.error("Failed to fetch analytics:", err);
+      console.error("Failed to fetch traffic analytics:", err);
     } finally {
       setLoading(false);
     }
@@ -48,140 +65,148 @@ function TrafficChart() {
 
   useEffect(() => {
     fetchData();
-  }, [filter]);
+  }, [startDate, endDate]);
 
-  const weekdays = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
+  // Turn YYYY-MM-DD into “May 21, 2025”
+  const formatXAxisLabel = (label) =>
+    new Date(label).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
 
-  const formatXAxisLabel = (label) => {
-    if (!label) return "N/A";
+  // Prepare chart data, keep rawDate for filtering
+  const formattedData = data.map((entry) => ({
+    rawDate: entry.label,
+    name: formatXAxisLabel(entry.label),
+    count: entry.count,
+  }));
 
-    if (filter === "week") {
-      const [year, week] = label.split("-");
-      return week && year ? `Week ${week}, ${year}` : "N/A";
+  // Filter client-side by date
+  const filteredData = formattedData.filter((item) => {
+    if (!startDate || !endDate) return true;
+    const d = new Date(item.rawDate);
+    return d >= new Date(startDate) && d <= new Date(endDate);
+  });
+
+  // Dialog handlers
+  const handleOpen = () => {
+    setTempStart(startDate);
+    setTempEnd(endDate);
+    setError("");
+    setDialogOpen(true);
+  };
+  const handleClose = () => setDialogOpen(false);
+  const handleApply = () => {
+    if (!tempStart || !tempEnd) {
+      setError("Please select both dates");
+      return;
     }
-
-    if (filter === "month") {
-      const [year, month] = label.split("-");
-      return new Date(year, parseInt(month) - 1).toLocaleString("default", {
-        month: "long",
-        year: "numeric",
-      });
+    if (new Date(tempEnd) < new Date(tempStart)) {
+      setError("To date must be the same or after From date");
+      return;
     }
-
-    if (filter === "year") return label;
-
-    if (filter === "day") {
-      const date = new Date(label);
-      return isNaN(date)
-        ? "Invalid"
-        : date.toLocaleDateString("default", { weekday: "long" });
-    }
-
-    return label ?? "N/A";
+    setStartDate(tempStart);
+    setEndDate(tempEnd);
+    setDialogOpen(false);
   };
 
-  const formattedData =
-    filter === "day"
-      ? weekdays.map((day) => {
-          const found = data.find((entry) => {
-            const date = new Date(entry.label);
-            const weekday = date.toLocaleDateString("default", {
-              weekday: "long",
-            });
-            return weekday === day;
-          });
-
-          return {
-            name: day,
-            count: found ? found.count : 0,
-          };
-        })
-      : data.map((entry) => ({
-          name: formatXAxisLabel(entry.label),
-          count: entry.count,
-        }));
-
   return (
-    <Box sx={{ p: 4 }}>
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={4}
-      >
-        <Typography variant="h6" fontWeight={600}>
-          Report Traffic
-        </Typography>
-        <TextField
-          select
-          size="small"
-          label="Filter by"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+    <>
+      <Box sx={{ p: 4 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={4}
         >
-          <MenuItem value="week">Weekly</MenuItem>
-          <MenuItem value="month">Monthly</MenuItem>
-          <MenuItem value="year">Yearly</MenuItem>
-        </TextField>
-      </Stack>
-
-      {loading ? (
-        <CircularProgress />
-      ) : (
-        <ResponsiveContainer width="100%" height={400}>
-          <LineChart
-            data={formattedData}
-            margin={{ top: 20, right: 30, left: 10, bottom: 50 }}
+          <Typography variant="h6" fontWeight={600}>
+            Report Traffic
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<FilterListIcon />}
+            onClick={handleOpen}
           >
-            <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-            <XAxis
-              dataKey="name"
-              angle={-10}
-              textAnchor="end"
-              height={60}
-              tick={{ fill: tickColor, fontSize: 12 }}
+            Filter
+          </Button>
+        </Stack>
+
+        {loading ? (
+          <CircularProgress />
+        ) : (
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart
+              data={filteredData}
+              margin={{ top: 20, right: 30, left: 10, bottom: 50 }}
+            >
+              <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
+              <XAxis
+                dataKey="name"
+                angle={-10}
+                textAnchor="end"
+                tick={{ fill: tickColor, fontSize: 12 }}
+                height={60}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fill: tickColor, fontSize: 12 }}
+                axisLine={{ stroke: tickColor }}
+                tickLine={{ stroke: tickColor }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: isDark ? "#222" : "#fff",
+                  border: "1px solid #888",
+                }}
+                labelStyle={{ color: tickColor }}
+                itemStyle={{ color: tickColor }}
+              />
+              <Legend wrapperStyle={{ color: tickColor, fontSize: 14 }} />
+              <Line
+                type="monotone"
+                dataKey="count"
+                stroke={theme.palette.primary.main}
+                strokeWidth={3}
+                dot={{ r: 5 }}
+                activeDot={{ r: 7 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </Box>
+
+      <Dialog open={dialogOpen} onClose={handleClose} fullWidth maxWidth="xs">
+        <DialogTitle>Filter by Date</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} mt={1}>
+            <TextField
+              type="date"
+              label="From"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={tempStart}
+              onChange={(e) => setTempStart(e.target.value)}
             />
-            <YAxis
-              allowDecimals={false}
-              tick={{ fill: tickColor, fontSize: 12 }}
-              axisLine={{ stroke: tickColor }}
-              tickLine={{ stroke: tickColor }}
+            <TextField
+              type="date"
+              label="To"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={tempEnd}
+              onChange={(e) => setTempEnd(e.target.value)}
             />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: isDark ? "#222" : "#fff",
-                border: "1px solid #888",
-                color: isDark ? "#fff" : "#000",
-              }}
-              labelStyle={{ color: tickColor }}
-              itemStyle={{ color: tickColor }}
-            />
-            <Legend
-              wrapperStyle={{
-                color: tickColor,
-                fontSize: 14,
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="count"
-              stroke={theme.palette.primary.main}
-              strokeWidth={3}
-              dot={{ r: 5 }}
-              activeDot={{ r: 7 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      )}
-    </Box>
+            {error && <FormHelperText error>{error}</FormHelperText>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleApply} variant="contained">
+            Apply
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 

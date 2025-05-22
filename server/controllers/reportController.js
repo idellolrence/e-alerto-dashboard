@@ -116,82 +116,105 @@ export const deleteReport = async (req, res) => {
 
 // For Visualization
 export const getReportAnalytics = async (req, res) => {
-  const { filter } = req.query;
-  const groupBy = {
-    week: { $dateToString: { format: "%Y-%U", date: "$timestamp" } },
-    month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } },
-    year: { $dateToString: { format: "%Y", date: "$timestamp" } },
-  }[filter || "month"];
+  const { start, end } = req.query;
 
   try {
-    const result = await reportModel.aggregate([
+    // 1) build an optional match stage
+    const matchStage =
+      start && end
+        ? [
+            {
+              $match: {
+                timestamp: {
+                  $gte: new Date(start),
+                  $lte: new Date(end),
+                },
+              },
+            },
+          ]
+        : [];
+
+    // 2) group by day and count
+    const pipeline = [
+      ...matchStage,
       {
         $group: {
-          _id: groupBy,
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$timestamp" },
+          },
           count: { $sum: 1 },
         },
       },
+      // 3) sort by date ascending
       { $sort: { _id: 1 } },
-    ]);
+      // 4) project into { label, count }
+      {
+        $project: {
+          _id: 0,
+          label: "$_id",
+          count: 1,
+        },
+      },
+    ];
 
-    const data = result.map((r) => ({
-      label: r._id,
-      count: r.count,
-    }));
-
-    res.json({ success: true, data });
+    const result = await reportModel.aggregate(pipeline);
+    return res.json({ success: true, data: result });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    console.error("Error in getReportAnalytics:", err);
+    return res.json({ success: false, message: err.message });
   }
 };
 
 export const getStatusAnalytics = async (req, res) => {
-  const { filter } = req.query;
-
-  const dateGroup = {
-    week: { $dateToString: { format: "%Y-%U", date: "$timestamp" } },
-    month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } },
-    year: { $dateToString: { format: "%Y", date: "$timestamp" } },
-  }[filter || "month"];
+  const { start, end } = req.query;
 
   try {
-    const statuses = [
-      "Submitted",
-      "Accepted",
-      "In-progress",
-      "Completed",
-      "Rejected",
-    ];
+    // If both start & end are given, filter by range
+    const matchStage =
+      start && end
+        ? [
+            {
+              $match: {
+                timestamp: { $gte: new Date(start), $lte: new Date(end) },
+              },
+            },
+          ]
+        : [];
 
     const pipeline = [
+      // 1) optional date‐range filter
+      ...matchStage,
+
+      // 2) group by day + status
       {
         $group: {
           _id: {
-            label: dateGroup,
+            label: {
+              $dateToString: { format: "%Y-%m-%d", date: "$timestamp" },
+            },
             status: "$status",
           },
           count: { $sum: 1 },
         },
       },
+
+      // 3) pivot statuses into an array of k/v
       {
         $group: {
           _id: "$_id.label",
-          counts: {
-            $push: {
-              k: "$_id.status",
-              v: "$count",
-            },
-          },
+          counts: { $push: { k: "$_id.status", v: "$count" } },
         },
       },
+
+      // 4) turn that array into a `data` object
       {
         $project: {
           label: "$_id",
-          data: {
-            $arrayToObject: "$counts",
-          },
+          data: { $arrayToObject: "$counts" },
         },
       },
+
+      // 5) fill in missing statuses with 0
       {
         $addFields: {
           Submitted: { $ifNull: ["$data.Submitted", 0] },
@@ -201,6 +224,8 @@ export const getStatusAnalytics = async (req, res) => {
           Rejected: { $ifNull: ["$data.Rejected", 0] },
         },
       },
+
+      // 6) drop the helper `data` field and sort by date
       {
         $project: {
           _id: 0,
@@ -216,9 +241,10 @@ export const getStatusAnalytics = async (req, res) => {
     ];
 
     const result = await reportModel.aggregate(pipeline);
-    res.json({ success: true, data: result });
+    return res.json({ success: true, data: result });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    console.error(err);
+    return res.json({ success: false, message: err.message });
   }
 };
 
