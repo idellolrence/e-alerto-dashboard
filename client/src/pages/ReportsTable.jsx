@@ -20,6 +20,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import DownloadIcon from "@mui/icons-material/Download";
 
 export default function ReportsTable() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -229,7 +230,7 @@ export default function ReportsTable() {
             <RefreshIcon />
           </IconButton>
         </Box>
-        <Button variant="contained" onClick={exportCSV}>
+        <Button variant="contained" startIcon={<DownloadIcon />} onClick={exportCSV}>
           Export CSV
         </Button>
       </Stack>

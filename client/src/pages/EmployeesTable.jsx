@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DownloadIcon from "@mui/icons-material/Download";
 
 const demoTheme = createTheme({
   cssVariables: {
@@ -433,7 +434,7 @@ function EmployeesTable(props) {
                   ),
                 }}
               />
-              <Button variant="outlined" onClick={handleExportCSV}>
+              <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExportCSV}>
                 Export CSV
               </Button>
             </Box>

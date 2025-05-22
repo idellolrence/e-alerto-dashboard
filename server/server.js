@@ -10,6 +10,7 @@ import reportRouter from "./routes/reportRoutes.js";
 import assignmentRouter from "./routes/assignmentRoutes.js";
 import activityLogsRouter from "./routes/activityLogsRoutes.js";
 import path from "path";
+import feedbackRouter from "./routes/feedbackRoutes.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -30,5 +31,6 @@ app.use("/api/reguser", regUserRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/assignments", assignmentRouter);
 app.use("/api/activitylogs", activityLogsRouter);
+app.use("/api/feedback", feedbackRouter);
 
 app.listen(port, () => console.log(`Server started on PORT:${port}`));

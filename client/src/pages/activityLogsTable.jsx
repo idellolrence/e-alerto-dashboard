@@ -19,6 +19,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
 
 export default function ActivityLogsTable() {
   const theme = useTheme();
@@ -207,7 +208,7 @@ export default function ActivityLogsTable() {
           >
             Purge Logs
           </Button>
-          <Button variant="contained" onClick={exportCSV} disabled={loading}>
+          <Button variant="contained" startIcon={<DownloadIcon />} onClick={exportCSV} disabled={loading}>
             Export CSV
           </Button>
         </Box>

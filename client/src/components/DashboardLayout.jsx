@@ -46,6 +46,7 @@ import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AccountInfo from "../pages/AccountInfo";
 import PageLock from "../pages/PageLock"; // Add at top
+import FeedbackTable from "../pages/FeedbackTable";
 
 const NAVIGATION = [
   {
@@ -343,6 +344,15 @@ function DashboardLayoutBasic(props) {
             <PageLock
               title="Job Order Locked"
               message="Please verify your account in the Profile Information under Settings to access Job Orders."
+            />
+          )
+        ) : router.pathname === "/report-management/feedback" ? (
+          isVerified ? (
+            <FeedbackTable />
+          ) : (
+            <PageLock
+              title="Activity Logs Locked"
+              message="Please verify your account in the Profile Information under Settings to access Feedback."
             />
           )
         ) : router.pathname === "/charts/traffic" ? (

@@ -4,14 +4,17 @@ import Report from "../models/reportModel.js";
 import multer from "multer";
 import ActivityLog from "../models/activityLogsModel.js";
 import userModel from "../models/userModel.js"; // ← for employeeName
+import Counter from "../models/idNumberModel.js"; // for Assignment ID
 
 // List all assignments
 export const listAllAssignments = async (req, res) => {
   try {
     const assignments = await Assignment.find().lean();
-    res.json({ success: true, assignments });
+    // assignments[i].assignmentNumber will now be available
+    return res.json({ success: true, assignments });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    console.error("Error fetching assignments:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -20,15 +23,32 @@ export const createAssignment = async (req, res) => {
   try {
     const { reportId, status, assignedTo } = req.body;
 
-    // 1) write into assignments
+    // 0) figure out year+month key, e.g. "25-01"
+    const now = new Date();
+    const YY = String(now.getFullYear()).slice(-2);
+    const MM = String(now.getMonth() + 1).padStart(2, "0");
+    const key = `${YY}-${MM}`;
+
+    // 1a) atomically bump counter for this key
+    const counter = await Counter.findByIdAndUpdate(
+      key,
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true }
+    );
+
+    // 1b) build assignmentNumber: R25-01-00001
+    const seqNo = String(counter.seq).padStart(5, "0");
+    const assignmentNumber = `PA${key}-${seqNo}`;
+
+    // 2) push the same status into the reports collection
     const a = new Assignment({
       reportId,
       status,
       assignedTo: assignedTo || null,
+      assignmentNumber,
     });
-    await a.save();
 
-    // 2) push the same status into the reports collection
+    await a.save();
     await Report.findByIdAndUpdate(reportId, { status });
 
     // 3) get user info for logging

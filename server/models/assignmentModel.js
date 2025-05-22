@@ -17,6 +17,12 @@ const assignmentSchema = new mongoose.Schema(
       ref: "user",
       default: null,
     },
+    // New: human-readable job order number
+    assignmentNumber: {
+      type: String,
+      unique: true,
+      index: true,
+    },
     // New fields for completion workflow
     siteInspectionReport: {
       type: String,

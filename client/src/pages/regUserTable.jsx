@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
+import DownloadIcon from "@mui/icons-material/Download";
 import { DataGrid } from "@mui/x-data-grid";
 
 function RegUserTable() {
@@ -118,7 +119,7 @@ function RegUserTable() {
         </Box>
 
         {/* Export button on the right */}
-        <Button onClick={exportToCSV} variant="contained">
+        <Button onClick={exportToCSV} startIcon={<DownloadIcon />} variant="contained">
           Export CSV
         </Button>
       </Stack>

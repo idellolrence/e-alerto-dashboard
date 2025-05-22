@@ -21,6 +21,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { AppContent } from "../context/AppContext";
+import DownloadIcon from "@mui/icons-material/Download";
 
 const statusColor = (status) => {
   switch (status.toLowerCase()) {
@@ -46,9 +47,8 @@ export default function AssignmentsTable() {
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState(10);
   const { userData } = useContext(AppContent);
-  const currentUserId = userData?.id || userData?._id; // just in case
+  const currentUserId = userData?.id || userData?._id;
 
-  // dialog states
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -57,7 +57,6 @@ export default function AssignmentsTable() {
   const [dialogEmpId, setDialogEmpId] = useState("");
   const [dialogDesiredStatus, setDialogDesiredStatus] = useState("");
   const [reportFile, setReportFile] = useState(null);
-
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [errorDialogMsg, setErrorDialogMsg] = useState("");
 
@@ -82,7 +81,6 @@ export default function AssignmentsTable() {
         aRes.json(),
       ]);
       if (uData.success) {
-        // ❗ Only include District Engineers
         const filtered = uData.users.filter(
           (u) =>
             u.position?.toLowerCase().includes("district engineer") &&
@@ -104,6 +102,7 @@ export default function AssignmentsTable() {
               status: a.status || r.status,
               assignedTo: a.assignedTo || "",
               assignmentId: a._id || "",
+              assignmentNumber: a.assignmentNumber || "",
               timestamp: a.createdAt || "",
               siteInspectionReport: a.siteInspectionReport || "",
               originalFileName: a.originalFileName || "",
@@ -119,6 +118,7 @@ export default function AssignmentsTable() {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -136,8 +136,9 @@ export default function AssignmentsTable() {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
-    return data.assignment._id;
+    return data.assignment;
   };
+
   const deleteAssignment = async (id) => {
     const res = await fetch(
       `${import.meta.env.VITE_BACKEND_URL}/api/assignments/delete/${id}`,
@@ -146,11 +147,12 @@ export default function AssignmentsTable() {
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
   };
+
   const uploadReport = async (assignmentId, file, status) => {
     const form = new FormData();
     form.append("report", file);
     form.append("status", status);
-    form.append("userId", currentUserId); // ✅ Add this line
+    form.append("userId", currentUserId);
     const res = await fetch(
       `${import.meta.env.VITE_BACKEND_URL}/api/assignments/upload-report/${assignmentId}`,
       { method: "POST", credentials: "include", body: form }
@@ -165,35 +167,24 @@ export default function AssignmentsTable() {
     setErrorDialogOpen(true);
   };
 
-  // handle status changes
+  // handlers
   const handleStatusChange = (rowId, newStatus) => {
     const row = rows.find((r) => r.id === rowId);
-
-    // need assignment first
-    if (newStatus.toLowerCase() === "completed" && !row.assignmentId) {
-      return showError("Please assign someone first.");
-    }
-    if (newStatus.toLowerCase() === "rejected" && !row.assignmentId) {
-      return showError("Please assign someone first.");
-    }
-
-    // confirm complete or reject
+    const statusLower = newStatus.toLowerCase();
     if (
-      newStatus.toLowerCase() === "completed" ||
-      newStatus.toLowerCase() === "rejected"
+      (statusLower === "completed" || statusLower === "rejected") &&
+      !row.assignmentId
     ) {
+      return showError("Please assign someone first.");
+    }
+    if (statusLower === "completed" || statusLower === "rejected") {
       setDialogRow(row);
-      setDialogDesiredStatus(newStatus);
-      if (newStatus.toLowerCase() === "completed") {
-        setCompleteDialogOpen(true);
-      } else {
-        setRejectDialogOpen(true);
-      }
+      setDialogDesiredStatus(statusLower);
+      setCompleteDialogOpen(statusLower === "completed");
+      setRejectDialogOpen(statusLower === "rejected");
       return;
     }
-
-    // revert to submitted
-    if (newStatus.toLowerCase() === "submitted" && row.assignmentId) {
+    if (statusLower === "submitted" && row.assignmentId) {
       deleteAssignment(row.assignmentId)
         .then(() =>
           setRows((prev) =>
@@ -201,9 +192,10 @@ export default function AssignmentsTable() {
               r.id === rowId
                 ? {
                     ...r,
-                    status: "submitted",
+                    status: "Submitted",
                     assignedTo: "",
                     assignmentId: "",
+                    assignmentNumber: "",
                     timestamp: "",
                     siteInspectionReport: "",
                     accomplishmentDate: "",
@@ -215,78 +207,75 @@ export default function AssignmentsTable() {
         .catch((e) => showError("Delete failed: " + e.message));
       return;
     }
-
-    // normal status change
     if (!row.assignedTo) {
       return showError("Please assign someone first.");
     }
-    setRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, status: newStatus } : r))
-    );
     upsertAssignment({
       id: row.assignmentId,
       reportId: row.reportId,
       status: newStatus,
       assignedTo: row.assignedTo,
     })
-      .then((newId) => {
-        if (!row.assignmentId && newId) {
-          setRows((prev) =>
-            prev.map((r) =>
-              r.id === rowId
-                ? {
-                    ...r,
-                    assignmentId: newId,
-                    timestamp: new Date().toISOString(),
-                  }
-                : r
-            )
-          );
-        }
-      })
+      .then((assignment) =>
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowId
+              ? {
+                  ...r,
+                  status: assignment.status,
+                  assignmentId: assignment._id,
+                  assignmentNumber: assignment.assignmentNumber,
+                  timestamp: assignment.createdAt || new Date().toISOString(),
+                }
+              : r
+          )
+        )
+      )
       .catch((e) => showError("Save failed: " + e.message));
   };
 
-  // confirm / cancel for complete or reject
+  // Dialog actions
   const confirmComplete = () => {
     setCompleteDialogOpen(false);
     setUploadDialogOpen(true);
   };
   const cancelComplete = () => setCompleteDialogOpen(false);
-
   const confirmReject = () => {
     setRejectDialogOpen(false);
     setUploadDialogOpen(true);
   };
   const cancelReject = () => setRejectDialogOpen(false);
 
-  // upload PDF
   const handleUpload = () => {
     uploadReport(dialogRow.assignmentId, reportFile, dialogDesiredStatus)
-      .then((assignment) => {
+      .then((assignment) =>
         setRows((prev) =>
           prev.map((r) =>
             r.id === dialogRow.id
               ? {
                   ...r,
-                  status: dialogDesiredStatus,
+                  status:
+                    dialogDesiredStatus.charAt(0).toUpperCase() +
+                    dialogDesiredStatus.slice(1),
+                  assignmentId: assignment._id,
+                  assignmentNumber: assignment.assignmentNumber,
                   siteInspectionReport: assignment.siteInspectionReport,
                   originalFileName: assignment.originalFileName,
                   accomplishmentDate: assignment.accomplishmentDate,
                 }
               : r
           )
-        );
+        )
+      )
+      .catch((e) => showError("Upload failed: " + e.message))
+      .finally(() => {
         setUploadDialogOpen(false);
         setReportFile(null);
-      })
-      .catch((e) => showError("Upload failed: " + e.message));
+      });
   };
 
-  // assignment dropdown
   const handleAssignClick = (rowId, newEmpId) => {
     if (newEmpId === "") {
-      // unassign
       const row = rows.find((r) => r.id === rowId);
       if (row.assignmentId) {
         deleteAssignment(row.assignmentId)
@@ -296,9 +285,10 @@ export default function AssignmentsTable() {
                 r.id === rowId
                   ? {
                       ...r,
-                      status: "submitted",
+                      status: "Submitted",
                       assignedTo: "",
                       assignmentId: "",
+                      assignmentNumber: "",
                       timestamp: "",
                       siteInspectionReport: "",
                       accomplishmentDate: "",
@@ -311,45 +301,82 @@ export default function AssignmentsTable() {
       }
       return;
     }
-    // confirm assign
     setDialogRow(rows.find((r) => r.id === rowId));
     setDialogEmpId(newEmpId);
     setConfirmDialogOpen(true);
   };
 
-  // OK / cancel for assignment
   const handleConfirmAssign = () => {
     setConfirmDialogOpen(false);
-    const { id: rowId, status, assignmentId, reportId } = dialogRow;
-    setRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, assignedTo: dialogEmpId } : r))
-    );
+    const { id: rowId, reportId, status } = dialogRow;
     upsertAssignment({
-      id: assignmentId,
+      id: dialogRow.assignmentId,
       reportId,
       status,
       assignedTo: dialogEmpId,
     })
-      .then((newId) => {
-        if (!assignmentId && newId) {
-          setRows((prev) =>
-            prev.map((r) =>
-              r.id === rowId
-                ? {
-                    ...r,
-                    assignmentId: newId,
-                    timestamp: new Date().toISOString(),
-                  }
-                : r
-            )
-          );
-        }
-      })
+      .then((assignment) =>
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowId
+              ? {
+                  ...r,
+                  assignedTo: assignment.assignedTo,
+                  assignmentId: assignment._id,
+                  assignmentNumber: assignment.assignmentNumber,
+                  timestamp: assignment.createdAt || new Date().toISOString(),
+                }
+              : r
+          )
+        )
+      )
       .catch((e) => showError("Save failed: " + e.message));
   };
   const handleCancelAssign = () => setConfirmDialogOpen(false);
 
-  // table columns
+  // --- CSV export helper ---
+  const exportCSV = () => {
+    // Only export what the grid is showing (post-search)
+    const filtered = rows.filter((r) =>
+      Object.values(r).some((val) =>
+        String(val).toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    );
+    const header = [
+      "Report ID",
+      "Status",
+      "Assigned To",
+      "Job Order No.",
+      "Assigned At",
+      "Site Inspection Report",
+      "Completion Date",
+    ];
+    const csvRows = filtered.map((r) => [
+      r.reportId,
+      r.status,
+      // map assignedTo id → name
+      r.assignedTo
+        ? employees.find((u) => u.id === r.assignedTo)?.fullName
+        : "",
+      r.assignmentNumber,
+      r.timestamp,
+      r.originalFileName || r.siteInspectionReport || "",
+      r.accomplishmentDate || "",
+    ]);
+    const csvContent = [header, ...csvRows]
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "assignments.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const columns = [
     { field: "reportId", headerName: "Report ID", flex: 1 },
     {
@@ -369,15 +396,9 @@ export default function AssignmentsTable() {
           SelectProps={{
             displayEmpty: true,
             renderValue: (v) => (
-              <Chip
-                label={v}
-                size="small"
-                color={statusColor(v)}
-                sx={{ textTransform: "capitalize" }}
-              />
+              <Chip label={v} size="small" color={statusColor(v)} />
             ),
           }}
-          sx={{ minWidth: 120 }}
         >
           {[
             "Submitted",
@@ -412,17 +433,13 @@ export default function AssignmentsTable() {
             renderValue: (v) =>
               v ? (
                 <Chip
-                  label={
-                    employees.find((u) => u.id === v)?.fullName || "Unknown"
-                  }
+                  label={employees.find((u) => u.id === v)?.fullName || ""}
                   size="small"
-                  sx={{ textTransform: "capitalize" }}
                 />
               ) : (
                 <em>Unassigned</em>
               ),
           }}
-          sx={{ minWidth: 140 }}
         >
           <MenuItem value="">
             <em>Unassigned</em>
@@ -435,7 +452,7 @@ export default function AssignmentsTable() {
         </TextField>
       ),
     },
-    { field: "assignmentId", headerName: "Job Order No.", flex: 1 },
+    { field: "assignmentNumber", headerName: "Job Order No.", flex: 1 },
     {
       field: "timestamp",
       headerName: "Assigned At",
@@ -452,7 +469,6 @@ export default function AssignmentsTable() {
           <a
             href={`${import.meta.env.VITE_BACKEND_URL}/uploads/${value}`}
             target="_blank"
-            rel="noopener noreferrer"
           >
             {row.originalFileName || value}
           </a>
@@ -480,7 +496,6 @@ export default function AssignmentsTable() {
       <Typography variant="h5" fontWeight={600} mb={3}>
         Job Order
       </Typography>
-
       <Stack
         direction="row"
         justifyContent="space-between"
@@ -511,15 +526,13 @@ export default function AssignmentsTable() {
         </Box>
         <Button
           variant="contained"
+          onClick={exportCSV} // ← wire up the CSV export
+          startIcon={<DownloadIcon />}
           disabled={loading}
-          onClick={() => {
-            /* CSV export… */
-          }}
         >
           Export CSV
         </Button>
       </Stack>
-
       <Paper>
         {loading ? (
           <Box p={4} textAlign="center">
@@ -614,9 +627,7 @@ export default function AssignmentsTable() {
         <DialogTitle>Error</DialogTitle>
         <DialogContent>{errorDialogMsg}</DialogContent>
         <DialogActions>
-          <Button onClick={() => setErrorDialogOpen(false)} autoFocus>
-            OK
-          </Button>
+          <Button onClick={() => setErrorDialogOpen(false)}>OK</Button>
         </DialogActions>
       </Dialog>
     </Box>
